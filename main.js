@@ -5,6 +5,7 @@ define(function (require, exports, module) {
 
     var AppInit                 = brackets.getModule("utils/AppInit"),
         CodeInspection          = brackets.getModule("language/CodeInspection"),
+        FileIndex               = brackets.getModule("filesystem/FileIndex"), 
         FileSystem              = brackets.getModule("filesystem/FileSystem"),
         ProjectManager          = brackets.getModule("project/ProjectManager"),
         DocumentManager         = brackets.getModule("document/DocumentManager"),
@@ -22,6 +23,10 @@ define(function (require, exports, module) {
      */
     var _configFileName = ".jshintrc";
 
+    function configure(fullPath) {
+        return _loadProjectConfig();
+    }
+    
     function handleHinter(text,fullPath) {
         var resultJH = JSHINT(text, config.options, config.globals);
 
@@ -127,13 +132,14 @@ define(function (require, exports, module) {
                 _refreshCodeInspection();
             });
     }
+    
+    CodeInspection.register("javascript", {
+        name: "JSHint",
+        scanFile: handleHinter,
+        configure: configure
+    });
 
     AppInit.appReady(function () {
-
-        CodeInspection.register("javascript", {
-            name: "JSHint",
-            scanFile: handleHinter
-        });
 
         $(DocumentManager)
             .on("documentSaved.jshint documentRefreshed.jshint", function (e, document) {
@@ -143,13 +149,6 @@ define(function (require, exports, module) {
                     tryLoadConfig();
                 }
             });
-        
-        $(ProjectManager)
-            .on("projectOpen.jshint", function () {
-                tryLoadConfig();
-            });
-        
-        tryLoadConfig();
         
     });
 
