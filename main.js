@@ -21,12 +21,9 @@ define(function (require, exports, module) {
      * @private
      * @type {string}
      */
-    var _configFileName = ".jshintrc";
+    var _configFileName = ".jshintrc",
+        configured = false;
 
-    function configure(fullPath) {
-        return _loadProjectConfig();
-    }
-    
     function handleHinter(text,fullPath) {
         var resultJH = JSHINT(text, config.options, config.globals);
 
@@ -62,10 +59,8 @@ define(function (require, exports, module) {
         } else {
             return null;
         }
-
-
     }
-
+    
     /**
      * Loads project-wide JSHint configuration.
      *
@@ -82,61 +77,57 @@ define(function (require, exports, module) {
 
         var projectRootEntry = ProjectManager.getProjectRoot(),
             result = new $.Deferred(),
-            file,
-            config;
-
-        file = FileSystem.getFileForPath(projectRootEntry.fullPath + _configFileName);
-        file.read(function (err, content) {
-            if (!err) {
-                var cfg = {};
-                try {
-                    config = JSON.parse(content);
-                } catch (e) {
-                    console.error("JSHint: error parsing " + file.fullPath + ". Details: " + e);
-                    result.reject(e);
-                    return;
+            file;
+        
+        if (configured) {
+            result.resolve(config);
+        } else {
+            var c;
+            file = FileSystem.getFileForPath(projectRootEntry.fullPath + _configFileName);
+            file.read(function (err, content) {
+                if (!err) {
+                    var cfg = {};
+                    try {
+                        c = JSON.parse(content);
+                    } catch (e) {
+                        console.error("JSHint: error parsing " + file.fullPath + ". Details: " + e);
+                        result.reject(e);
+                        return;
+                    }
+                    cfg.globals = c.globals || {};
+                    if ( c.globals ) { delete c.globals; }
+                    cfg.options = c;
+                    result.resolve(cfg);
+                } else {
+                    result.reject(err);
                 }
-                cfg.globals = config.globals || {};
-                if ( config.globals ) { delete config.globals; }
-                cfg.options = config;
-                result.resolve(cfg);
-            } else {
-                result.reject(err);
-            }
-        });
+            });
+        }
         return result.promise();
     }
     
-    /**
-     * Attempts to load project configuration file.
-     */
-    function tryLoadConfig() {
-        /**
-         * Makes sure JSHint is re-ran when the config is reloaded
-         * 
-         * This is a workaround due to some loading issues in Sprint 31. 
-         * See bug for details: https://github.com/adobe/brackets/issues/5442
-         */
-        function _refreshCodeInspection() {
-            CodeInspection.toggleEnabled();
-            CodeInspection.toggleEnabled();
-        }
+    function run(code, fullPath) {
+        var response = new $.Deferred();
+        
         _loadProjectConfig()
-            .done(function (newConfig) {
-                config = newConfig;
+            .then(function(cfg) {
+                config = cfg;
             })
-            .fail(function () {
+            .fail(function() {
                 config = defaultConfig;
             })
-            .always(function () {
-                _refreshCodeInspection();
+            .always(function() {
+                var result = handleHinter(code, fullPath);
+                response.resolve(result);
             });
+        
+        return response.promise();
+        
     }
     
     CodeInspection.register("javascript", {
         name: "JSHint",
-        scanFile: handleHinter,
-        configure: configure
+        scanFileAsync: run
     });
 
     AppInit.appReady(function () {
@@ -146,7 +137,7 @@ define(function (require, exports, module) {
                 // if this project's JSHint config has been updated, reload
                 if (document.file.fullPath ===
                             ProjectManager.getProjectRoot().fullPath + _configFileName) {
-                    tryLoadConfig();
+                    configured = false;
                 }
             });
         
